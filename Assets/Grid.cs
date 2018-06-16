@@ -7,6 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Linq;
 
 public class Grid : MonoBehaviour
 {
@@ -18,6 +19,7 @@ public class Grid : MonoBehaviour
     [SerializeField] private bool[] accessible;
 
     public Text gridText;
+    public Text curNodeText;
 
     int departPoint;
     int destPoint;
@@ -85,7 +87,7 @@ public class Grid : MonoBehaviour
                 departPoint = Vector2Grid(selectedObj.transform.position);
                 destPoint = Vector2Grid(hit.point);
 
-                Debug.DrawLine(new Vector3((int)hit.point.x - .5f, .5f, (int)hit.point.z - .5f), new Vector3((int)hit.point.x + .5f, .5f, (int)hit.point.z + .5f), Color.red, Mathf.Infinity);
+                DrawCheckLine(destPoint, Color.blue);
                 FindPath(departPoint, destPoint);
 
                 //GetNeighbor(Vector2Grid(hit.point));
@@ -129,20 +131,12 @@ public class Grid : MonoBehaviour
     // Find out distance between two grids
     int GridDistance(int gridA, int gridB)
     {
-        // Finding gap between two grids
-        int gridGap = Mathf.Abs(gridA - gridB);
-        print(gridA + ", " + gridB + " Gap : " + gridGap);
         // To find diagonal distance, Got to be compared which row or column is bigger
-        if (gridGap > numOfGrid)
-        {
-            if (numOfGrid / gridGap > gridGap % numOfGrid) return (gridGap / numOfGrid * 10) + (gridGap % numOfGrid * 4);
-            else return (gridGap / numOfGrid * 4) + (gridGap % numOfGrid * 10);
-        }
-        else
-        {
-            if (gridGap / numOfGrid > gridGap % numOfGrid) return (gridGap / numOfGrid * 10) + (gridGap % numOfGrid * 4);
-            else return (gridGap / numOfGrid * 4) + (gridGap % numOfGrid * 10);
-        }
+        int h = Mathf.Abs(gridB / numOfGrid - gridA / numOfGrid);
+        int w = Mathf.Abs(gridB % numOfGrid - gridA % numOfGrid);
+
+        if (h > w) return w * 14 + (h - w) * 10;
+        else return h * 14 + (w - h) * 10;        
     }
 
     // Convert Vector3 position to Grid number
@@ -164,39 +158,77 @@ public class Grid : MonoBehaviour
         fCost[gridNum] = gCost[gridNum] + hCost[gridNum];
     }
 
+    void DrawCheckLine(int grid, Color color)
+    {
+        Debug.DrawLine(Grid2Vector(grid) + new Vector3(-gridSize/2, -.5f, -gridSize/2), Grid2Vector(grid) + new Vector3(gridSize / 2, -.5f, gridSize / 2), color, Mathf.Infinity);
+    }
+
+    int SmallestGridNode(List<int> list)
+    {
+        int smallest = fCost[list[0]];
+        int index = 0;
+
+        for(int a=0; a<list.Count; a++)
+        {
+            if (fCost[list[a]] < smallest)
+            {
+                //print("FCost" + fCost[list[a]]);
+                smallest = fCost[list[a]];
+                index = list[a];
+            }
+            //print("fCost[list[" + index + "]]");
+        }
+        openList.Remove(index);
+
+        foreach(int neighbor in GetNeighbor(index))
+        {
+            //print("neighbor" + neighbor);
+            //print("fCost[neighbor] : " + fCost[neighbor]);
+            if (fCost[neighbor] == -1 && neighbor != departPoint)// && !closedList.Contains(neighbor))
+            {
+                openList.Add(neighbor);
+                FindCost(neighbor);
+                DrawCheckLine(neighbor, Color.red);
+            }
+        }
+        return index;
+    }
+
     void FindPath(int depart, int dest)
     {
         int curGrid = -1;
+
+        openList.Clear();
+        closedList.Clear();
         
         openList.AddRange(GetNeighbor(depart));
         foreach (int nList in openList)
         {
-            FindCost(nList);
+            if(fCost[nList] == -1) FindCost(nList);
+            DrawCheckLine(nList, Color.red);
         }
-        //for (int a = 0; a < 1; a++)
-        //{
-        //    foreach (int nList in openList)
-        //    {
-        //        if (fCost[nList] != -1) continue;
-        //        openList.Add(nList);
-        //    }
-        //}
 
-        foreach (int gList in openList)
+        for (int a = 0; a < 10; a++)
         {
-            print(gList);
+            //closedList.Add(openList.BinarySearch(openList.Min(x => fCost[x])));
+            //openList.Remove(openList.Min());
+
+            StartCoroutine(FindingPathCoroutine());
+            //Also this one does remove the node which having smallest fCost from openList
+
         }
+    }
 
-        //while(curGrid != dest)
-        //{
-        //    int minOpen = openList[0];
-        //    foreach(int oList in openList)
-        //    {
-        //        if (minOpen > oList) minOpen = oList;
-        //    }
-
-
-        //}
+    IEnumerator FindingPathCoroutine()
+    {
+        int curNode = 0;
+        while (curNode != destPoint)
+        {
+            curNode = SmallestGridNode(openList);
+            curNodeText.text = curNode.ToString();
+            closedList.Add(curNode);
+            yield return new WaitForSeconds(.01f);
+        }
     }
 
 }
