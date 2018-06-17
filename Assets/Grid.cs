@@ -11,22 +11,29 @@ using System.Linq;
 
 public class Grid : MonoBehaviour
 {
+    // The object which will be moved
     [SerializeField] GameObject selectedObj;
+
 
     [SerializeField] private int sizeOfField;
     [SerializeField] private int gridSize;
     private int numOfGrid;
-    [SerializeField] private bool[] accessible;
+    private bool[] accessible;
 
     public Text gridText;
     public Text curNodeText;
+    public Text curNodeCosts;
 
     int departPoint;
     int destPoint;
 
+    [SerializeField] bool finding;
+    bool buildMode;
+
     [SerializeField] private List<int> openList;
     [SerializeField] private List<int> closedList;
 
+    [SerializeField] int[] parent;
     private int[] gCost;
     private int[] hCost;
     private int[] fCost;
@@ -43,10 +50,12 @@ public class Grid : MonoBehaviour
         openList = new List<int>();
         closedList = new List<int>();
 
+        finding = false;
+        buildMode = false;
 
         // Initialize transform values
         this.transform.localScale = new Vector3(sizeOfField, 1, sizeOfField);
-        this.transform.localPosition = new Vector3(sizeOfField / 2, -.5f, sizeOfField / 2);
+        //this.transform.localPosition = new Vector3(sizeOfField / 2, -.5f, sizeOfField / 2);
         this.transform.localRotation = Quaternion.identity;
 
         // Drawing grids as much as I set above
@@ -59,6 +68,7 @@ public class Grid : MonoBehaviour
         gCost = new int[numOfGrid * numOfGrid];
         hCost = new int[numOfGrid * numOfGrid];
         fCost = new int[numOfGrid * numOfGrid];
+        parent = new int[numOfGrid * numOfGrid];
 
         accessible = new bool[numOfGrid * numOfGrid];
 
@@ -67,46 +77,84 @@ public class Grid : MonoBehaviour
             gCost[a] = -1;
             hCost[a] = -1;
             fCost[a] = -1;
-
-            if (Grid2Vector(a).y > .5f) accessible[a] = false;
-            else accessible[a] = true;
+            parent[a] = -1;
+            accessible[a] = true;
         }
+
+        //for(int a=710; a<740; a++)
+        //{
+        //    GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        //    cube.transform.position = Grid2Vector(a);
+        //    cube.transform.localScale = new Vector3(gridSize, gridSize, gridSize);
+        //    cube.GetComponent<MeshRenderer>().material.color = new Color(255, 0, 0);
+        //    accessible[a] = false;
+        //}
+        GenerateObstacle(710, 740, true);
+        GenerateObstacle(10, 710, false);
+        GenerateObstacle(789, 2289, false);
 
     }
 
     // Update is called once per frame
     void Update()
     {
+        if (Input.GetMouseButton(0))
+        {
+            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            RaycastHit hit;
+            if (Physics.Raycast(ray, out hit, Mathf.Infinity))
+            {
+                if (hit.collider.CompareTag("AStar"))
+                {
+                    if (buildMode && accessible[Vector2Grid(hit.point)] == true)
+                    {
+                        GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                        cube.transform.position = Grid2Vector(Vector2Grid(hit.point));
+                        cube.transform.localScale = new Vector3(gridSize, gridSize, gridSize);
+                        cube.GetComponent<MeshRenderer>().material.color = new Color(255, 0, 0);
+                        accessible[Vector2Grid(hit.point)] = false;
+                    }
+                    else
+                    {
+                        string curNodeCostStr;
+                        if (Physics.Raycast(ray, out hit, Mathf.Infinity))
+                        {
+                            gridText.text = Vector2Grid(hit.point).ToString();
+                            curNodeCostStr = "GCost : " + gCost[Vector2Grid(hit.point)] + "    HCost : " + hCost[Vector2Grid(hit.point)] + "    FCost : " + fCost[Vector2Grid(hit.point)];
+                            curNodeCostStr.Replace('$', '\n');
+                            curNodeCosts.text = curNodeCostStr;
+                        }
+                    }
+                }
+            }
+        }
+
         if (Input.GetMouseButtonDown(1))
         {
             Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-
             RaycastHit hit;
+
             if (Physics.Raycast(ray, out hit, Mathf.Infinity))
             {
-                departPoint = Vector2Grid(selectedObj.transform.position);
-                destPoint = Vector2Grid(hit.point);
+                if (hit.collider.tag == "AStar")
+                {
+                    departPoint = Vector2Grid(selectedObj.transform.position);
+                    destPoint = Vector2Grid(hit.point);
 
-                DrawCheckLine(destPoint, Color.blue);
-                FindPath(departPoint, destPoint);
+                    finding = true;
+                    DrawCheckLine(destPoint, Color.blue, false);
+                    FindPath(departPoint, destPoint);
 
-                //GetNeighbor(Vector2Grid(hit.point));
+                    //GetNeighbor(Vector2Grid(hit.point));
+                }
             }
         }
-        if (Input.GetMouseButtonDown(0))
-        {
-            Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            RaycastHit hit;
-            if (Physics.Raycast(ray, out hit, Mathf.Infinity))
-            {
-                gridText.text = Vector2Grid(hit.point).ToString();
-                print("GridNum : " + Vector2Grid(hit.point));
-                print("Gcost : " + gCost[Vector2Grid(hit.point)]);
-                print("Hcost : " + hCost[Vector2Grid(hit.point)]);
-                print("Fcost : " + fCost[Vector2Grid(hit.point)]);
-            }
+    }
 
-        }
+    public void ToggleBuildMode()
+    {
+        if (buildMode == false) buildMode = true;
+        else buildMode = false;
     }
 
     List<int> GetNeighbor(int gridNum)
@@ -136,7 +184,7 @@ public class Grid : MonoBehaviour
         int w = Mathf.Abs(gridB % numOfGrid - gridA % numOfGrid);
 
         if (h > w) return w * 14 + (h - w) * 10;
-        else return h * 14 + (w - h) * 10;        
+        else return h * 14 + (w - h) * 10;
     }
 
     // Convert Vector3 position to Grid number
@@ -158,17 +206,18 @@ public class Grid : MonoBehaviour
         fCost[gridNum] = gCost[gridNum] + hCost[gridNum];
     }
 
-    void DrawCheckLine(int grid, Color color)
+    void DrawCheckLine(int grid, Color color, bool downToUp)
     {
-        Debug.DrawLine(Grid2Vector(grid) + new Vector3(-gridSize/2, -.5f, -gridSize/2), Grid2Vector(grid) + new Vector3(gridSize / 2, -.5f, gridSize / 2), color, Mathf.Infinity);
+        if (downToUp) Debug.DrawLine(Grid2Vector(grid) + new Vector3(-gridSize / 2, -.5f, -gridSize / 2), Grid2Vector(grid) + new Vector3(gridSize / 2, -.5f, gridSize / 2), color, Mathf.Infinity);
+        else Debug.DrawLine(Grid2Vector(grid) + new Vector3(-gridSize / 2, -.5f, gridSize / 2), Grid2Vector(grid) + new Vector3(gridSize / 2, -.5f, -gridSize / 2), color, Mathf.Infinity);
     }
 
     int SmallestGridNode(List<int> list)
     {
         int smallest = fCost[list[0]];
-        int index = 0;
+        int index = list[0];
 
-        for(int a=0; a<list.Count; a++)
+        for (int a = 0; a < list.Count; a++)
         {
             if (fCost[list[a]] < smallest)
             {
@@ -180,15 +229,22 @@ public class Grid : MonoBehaviour
         }
         openList.Remove(index);
 
-        foreach(int neighbor in GetNeighbor(index))
+        foreach (int neighbor in GetNeighbor(index))
         {
             //print("neighbor" + neighbor);
             //print("fCost[neighbor] : " + fCost[neighbor]);
-            if (fCost[neighbor] == -1 && neighbor != departPoint)// && !closedList.Contains(neighbor))
+            if (fCost[neighbor] == -1 && neighbor != departPoint && accessible[neighbor] != false)// && !closedList.Contains(neighbor))
             {
+                parent[neighbor] = index;
+                if (neighbor == destPoint)
+                {
+                    finding = false;
+                    print("Found!");
+                    DrawTrail(neighbor);
+                }
                 openList.Add(neighbor);
                 FindCost(neighbor);
-                DrawCheckLine(neighbor, Color.red);
+                DrawCheckLine(neighbor, Color.red, true);
             }
         }
         return index;
@@ -196,39 +252,93 @@ public class Grid : MonoBehaviour
 
     void FindPath(int depart, int dest)
     {
-        int curGrid = -1;
-
         openList.Clear();
         closedList.Clear();
-        
+
         openList.AddRange(GetNeighbor(depart));
         foreach (int nList in openList)
         {
-            if(fCost[nList] == -1) FindCost(nList);
-            DrawCheckLine(nList, Color.red);
+            if (fCost[nList] == -1) FindCost(nList);
+            DrawCheckLine(nList, Color.red, true);
         }
 
-        for (int a = 0; a < 10; a++)
-        {
-            //closedList.Add(openList.BinarySearch(openList.Min(x => fCost[x])));
-            //openList.Remove(openList.Min());
 
+        //closedList.Add(openList.BinarySearch(openList.Min(x => fCost[x])));
+        //openList.Remove(openList.Min());
+
+        for (int a = 0; a < 100; a++)
+        {
             StartCoroutine(FindingPathCoroutine());
             //Also this one does remove the node which having smallest fCost from openList
+        }
 
+    }
+
+    void GenerateObstacle(int start, int end, bool horizontal)
+    {
+        if (horizontal)
+        {
+            for (int a = start; a < end; a++)
+            {
+                GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                cube.transform.position = Grid2Vector(a);
+                cube.transform.localScale = new Vector3(gridSize, gridSize, gridSize);
+                cube.GetComponent<MeshRenderer>().material.color = new Color(255, 0, 0);
+                accessible[a] = false;
+            }
+        }
+        else
+        {
+            for (int a = start; a < end; a += numOfGrid)
+            {
+                GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                cube.transform.position = Grid2Vector(a);
+                cube.transform.localScale = new Vector3(gridSize, gridSize, gridSize);
+                cube.GetComponent<MeshRenderer>().material.color = new Color(255, 0, 0);
+                accessible[a] = false;
+            }
+        }
+    }
+
+    int DrawTrail(int endPoint)
+    {
+        if (endPoint == -1)
+        {
+            print(endPoint);
+            return 0;
+        }
+        else
+        {
+            print(endPoint);
+            DrawCheckLine(endPoint, Color.blue, false);
+            return DrawTrail(parent[endPoint]);
         }
     }
 
     IEnumerator FindingPathCoroutine()
     {
         int curNode = 0;
-        while (curNode != destPoint)
+        while (finding)
         {
             curNode = SmallestGridNode(openList);
             curNodeText.text = curNode.ToString();
-            closedList.Add(curNode);
-            yield return new WaitForSeconds(.01f);
+            if (curNode != 0) closedList.Add(curNode);
+            yield return new WaitForSeconds(.1f);
         }
     }
 
+    IEnumerator DrawPathTrail(int curPoint)
+    {
+        if (curPoint == -1)
+        {
+            print(curPoint);
+            return null;
+        }
+        else
+        {
+            print(curPoint);
+            DrawCheckLine(curPoint, Color.blue, false);
+            return DrawPathTrail(parent[curPoint]);
+        }
+    }
 }
